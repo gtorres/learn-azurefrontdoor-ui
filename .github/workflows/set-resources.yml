@@ -1,0 +1,74 @@
+name: Set resources workflow
+
+on:
+  workflow_call:
+    outputs:
+      staticSiteApiToken:
+        description: "API token for deploying to the static web site"
+        value: ${{ jobs.set_resources_job.outputs.staticSiteApiToken }}
+
+jobs:
+  set_resources_job:
+    name: Set resources
+    runs-on: ubuntu-latest
+    environment: learn
+
+    outputs:
+      staticSiteApiToken: ${{ steps.get-static-site-api-token.outputs.staticSiteApiToken }}
+
+    steps:
+    - name: ✔️ Checkout repo at triggering ref
+      uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
+        submodules: true
+
+    - name: 🔧 Install GitVersion
+      uses: gittools/actions/gitversion/setup@v0.9.15
+      with:
+        versionSpec: '5.x'
+
+    - name: 🏃 Execute GitVersion
+      uses: gittools/actions/gitversion/execute@v0.9.15
+      with:
+        useConfigFile: true
+
+    - name: 📜 Set resource name common
+      shell: bash
+      run: |
+        resourceNameCommon=${{ vars.RESOURCE_NAME_COMMON_START }}-${{ env.GITVERSION_SEMVER }}
+        echo "RESOURCE_NAME_COMMON=$resourceNameCommon" >> $GITHUB_ENV
+
+    - name: 🔑 Log in via Azure CLI using fed cred
+      uses: azure/login@v1
+      with:
+        client-id: ${{ secrets.AZURE_APP_CLIENT_ID }}
+        tenant-id: ${{ secrets.AZURE_APP_TENANT_ID }}
+        subscription-id: ${{ secrets.AZ_SUBSCRIPTION_ID }}
+
+    # - name: Get Github context
+    #   shell: bash
+    #   run: |
+    #     echo "$GITHUB_CONTEXT"
+    #   env:
+    #     GITHUB_CONTEXT: ${{ toJson(github) }}
+
+    - name: ☁️ Create Azure resources
+      shell: bash
+      run: |
+        mainDeploymentName=($DEPLOYMENT_NAME_PREFIX-$GITVERSION_SEMVER)
+
+        az deployment sub create -l ${{ vars.MAIN_REGION }} -n $mainDeploymentName --subscription ${{ secrets.AZ_SUBSCRIPTION_ID }} --template-file infra/main.bicep\
+          --parameters deploymentNamePrefix=$DEPLOYMENT_NAME_PREFIX resourceNameCommonPart=$RESOURCE_NAME_COMMON resourceGroupLocation=${{ vars.MAIN_REGION }} stage=${{ vars.STAGE }} appLocation=$APP_LOCATION appApiLocation=$APP_API_LOCATION appArtifactLocation=$APP_ARTIFACT_LOCATION
+
+        echo "MAIN_DEPLOYMENT_NAME=$mainDeploymentName" >> $GITHUB_ENV
+      env:
+        DEPLOYMENT_NAME_PREFIX: 'gha_${{ github.run_id }}'
+
+    - name: Get static site API token
+      id: get-static-site-api-token
+      shell: bash
+      run: |
+        staticSiteName=$(az deployment sub show -n $MAIN_DEPLOYMENT_NAME --query 'properties.outputs.staticSiteName.value' -o tsv)
+        staticSiteApiToken=$(az staticwebapp secrets list --name $staticSiteName --query 'properties.apiKey' -o tsv)
+        echo "staticSiteApiToken=$staticSiteApiToken" >> $GITHUB_OUTPUT

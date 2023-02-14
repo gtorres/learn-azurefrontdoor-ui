@@ -1,0 +1,7 @@
+mode: ContinuousDelivery
+branches:
+  feature:
+    regex: ^(features?|topic)[/-]
+ignore:
+  sha: []
+merge-message-formats: {}

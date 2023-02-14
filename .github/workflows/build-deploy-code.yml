@@ -1,0 +1,30 @@
+name: Build and deploy code workflow
+
+on:
+  workflow_call:
+    inputs:
+      staticSiteApiToken:
+        required: true
+        type: string
+
+jobs:
+  build_deploy_job:
+    name: Build and deploy code
+    runs-on: ubuntu-latest
+    environment: learn
+
+    steps:
+    - name: ✔️ Checkout repo
+      uses: actions/checkout@v2
+      with:
+        submodules: true
+
+    - name: 🚀 Deploy site
+      uses: azure/static-web-apps-deploy@v1
+      with:
+        azure_static_web_apps_api_token: ${{ inputs.staticSiteApiToken }}
+        repo_token: ${{ secrets.GITHUB_TOKEN }}
+        action: upload
+        app_location: "/"
+        api_location: ""
+        output_location: "dist"
